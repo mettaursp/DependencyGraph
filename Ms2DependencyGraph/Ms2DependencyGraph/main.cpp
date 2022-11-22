@@ -122,11 +122,19 @@ int main(int argc, char** argv)
 	fs::path setBonusPath = outputRootPath;
 	setBonusPath += "setBonuses/";
 
+	fs::path itemRootPath = xmlRootPath;
+	itemRootPath += "item/";
+
+	fs::path itemStringPath = xmlRootPath;
+	itemStringPath += "string/en/itemname.xml";
+
 	forEachFile(effectRootPath, true, &ParseAdditionalEffect);
 	forEachFile(skillRootPath, true, &ParseSkill);
 	forEachFile(stringRootPath, true, &ParseStrings);
+	forEachFile(itemRootPath, true, &ParseItems);
 	ParseJobs(jobPath);
 	ParseJobStrings(jobNamePath);
+	ParseItemStrings(itemStringPath);
 	ParseSetBonusOptions(setItemOptionPath);
 	ParseSetBonuses(setItemInfoPath);
 	ParseSetBonusStrings(setItemNamePath);

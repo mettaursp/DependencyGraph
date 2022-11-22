@@ -5,6 +5,7 @@ std::unordered_map<int, SkillData> skills;
 std::unordered_map<JobCode, JobData> jobs;
 std::unordered_map<int, SetBonusOptionData> setBonusOptions;
 std::unordered_map<int, SetBonusData> setBonuses;
+std::unordered_map<int, ItemData> items;
 
 void ParseBeginCondition(tinyxml2::XMLElement* node, BeginCondition& condition)
 {
@@ -729,7 +730,87 @@ void ParseSetBonusStrings(const fs::path& filePath)
 			continue;
 
 		setData.Name = nameAttribute->Value();
+	}
+}
 
+void ParseItems(const fs::path& filePath)
+{
+	int itemId = atoi(filePath.stem().string().c_str());
+
+	ItemData& item = items[itemId];
+
+	tinyxml2::XMLDocument document;
+
+	document.LoadFile(filePath.string().c_str());
+
+	tinyxml2::XMLElement* rootElement = document.RootElement();
+
+	for (tinyxml2::XMLElement* environmentElement = rootElement->FirstChildElement(); environmentElement; environmentElement = environmentElement->NextSiblingElement())
+	{
+		if (!isNodeEnabled(environmentElement, &item.Feature, &item.Locale))
+			continue;
+
+		tinyxml2::XMLElement* additionalEffects = environmentElement->FirstChildElement("AdditionalEffect");
+
+		if (additionalEffects == nullptr)
+			continue;
+
+		std::vector<int> effectIds;
+		std::vector<int> effectLevels;
+
+		readAttribute(additionalEffects, "id", effectIds);
+		readAttribute(additionalEffects, "level", effectLevels);
+
+		for (int i = 0; i < effectIds.size(); ++i)
+		{
+			int effectId = effectIds[i];
+
+			if (effectId == 0)
+				continue;
+
+			item.AdditionalEffects.push_back(ReferenceData{ ReferenceType::Effect, effectId, effectLevels[i] });
+		}
+	}
+}
+
+void ParseItemStrings(const fs::path& filePath)
+{
+	tinyxml2::XMLDocument document;
+
+	document.LoadFile(filePath.string().c_str());
+
+	tinyxml2::XMLElement* rootElement = document.RootElement();
+
+	for (tinyxml2::XMLElement* keyElement = rootElement->FirstChildElement(); keyElement; keyElement = keyElement->NextSiblingElement())
+	{
+		int itemId = readAttribute<int>(keyElement, "id", 0);
+
+		if (itemId == 0)
+			continue;
+
+		auto itemIndex = items.find(itemId);
+
+		if (itemIndex == items.end())
+			continue;
+
+		ItemData& item = itemIndex->second;
+
+		if (!isNodeEnabled(keyElement, &item.Feature, &item.Locale))
+			continue;
+
+		const tinyxml2::XMLAttribute* nameAttribute = keyElement->FindAttribute("name");
+
+		if (nameAttribute == nullptr)
+			continue;
+
+		item.Name = nameAttribute->Value();
+
+		const tinyxml2::XMLAttribute* classAttribute = keyElement->FindAttribute("class");
+
+		if (classAttribute == nullptr)
+			continue;
+
+		item.Class = classAttribute->Value();
 	}
 }
 

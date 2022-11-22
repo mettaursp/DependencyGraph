@@ -227,10 +227,28 @@ void GraphData::PrintRoot(const SetBonusData& setData)
 	{
 		const SetBonusOptionPartData& part = setData.OptionData->Parts[i];
 
-		OutFile << "\tset" << part.Count << " [label=\"" << part.Count << " Piece Bonus\"]\n";
-		OutFile << "\t" << RootName << " -> set" << part.Count << "\n";
+		OutFile << "\tset_" << part.Count << " [label=\"" << part.Count << " Piece Bonus\" shape=invhouse]\n";
+		OutFile << "\t" << RootName << " -> set_" << part.Count << "\n";
 
 		for (int j = 0; j < part.AdditionalEffects.size(); ++j)
-			OutFile << "\tset" << part.Count << " -> " << Dereference(part.AdditionalEffects[j]) << "\n";
+			OutFile << "\tset_" << part.Count << " -> " << Dereference(part.AdditionalEffects[j]) << "\n";
+	}
+
+	for (int i = 0; i < setData.ItemIds.size(); ++i)
+	{
+		int itemId = setData.ItemIds[i];
+
+		const auto& itemIndex = items.find(itemId);
+
+		if (itemIndex == items.end())
+			continue;
+
+		const ItemData& item = itemIndex->second;
+
+		OutFile << "\titem_" << itemId << " [label=\"Item " << itemId << "\\n" << item.Name << "\\n" << item.Class << "\" shape=house]\n";
+		OutFile << "\t" << RootName << " -> " << "item_" << itemId << "\n";
+		
+		for (int j = 0; j < item.AdditionalEffects.size(); ++j)
+			OutFile << "\titem_" << itemId << " -> " << Dereference(item.AdditionalEffects[j]) << "\n";
 	}
 }

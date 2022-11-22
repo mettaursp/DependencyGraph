@@ -223,4 +223,15 @@ struct SetBonusOptionPartData
 	std::vector<ReferenceData> AdditionalEffects;
 };
 
+struct ItemData
+{
+	std::string Name;
+	std::string Class;
+
+	SupportSettings Feature;
+	SupportSettings Locale;
+
+	std::vector<ReferenceData> AdditionalEffects;
+};
+
 std::ostream& operator<<(std::ostream& out, const ReferenceData& reference);
