@@ -84,6 +84,7 @@ void graphSetBonus(const fs::path& outputRoot, int setId, const SetBonusData& se
 int main(int argc, char** argv)
 {
 	fs::path xmlRootPath = "B:/Documents/MapleServer2/GameDataParser/Resources/Xml/";
+	fs::path outputRootPath = "B:/Documents/Ms2DependencyGraph/output/";
 
 	fs::path tableRootPath = xmlRootPath;
 	tableRootPath += "table/";
@@ -105,8 +106,6 @@ int main(int argc, char** argv)
 
 	fs::path jobNamePath = xmlRootPath;
 	jobNamePath += "string/en/jobname.xml";
-
-	fs::path outputRootPath = "B:/Documents/Ms2DependencyGraph/output/";
 
 	fs::path classKitPath = outputRootPath;
 	classKitPath += "classKits/";
