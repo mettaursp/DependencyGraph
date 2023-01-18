@@ -9,5 +9,8 @@ std::ostream& operator<<(std::ostream& out, const ReferenceData& reference)
 
 	out << reference.Id;
 
+	if (reference.Level != -1)
+		out << "_" << reference.Level;
+
 	return out;
 }

@@ -1,5 +1,6 @@
 #include "XmlParsing.h"
 
+std::unordered_map<int, MagicPathData> magicPaths;
 std::unordered_map<int, AdditionalEffectData> effects;
 std::unordered_map<int, SkillData> skills;
 std::unordered_map<JobCode, JobData> jobs;
@@ -7,11 +8,50 @@ std::unordered_map<int, SetBonusOptionData> setBonusOptions;
 std::unordered_map<int, SetBonusData> setBonuses;
 std::unordered_map<int, ItemData> items;
 
+void ParseMagicPaths(const fs::path& filePath)
+{
+	tinyxml2::XMLDocument document;
+
+	document.LoadFile(filePath.string().c_str());
+
+	tinyxml2::XMLElement* rootElement = document.RootElement();
+
+	for (tinyxml2::XMLElement* typeElement = rootElement->FirstChildElement(); typeElement; typeElement = typeElement->NextSiblingElement())
+	{
+		int id = readAttribute<int>(typeElement, "id", 0);
+
+		MagicPathData& path = magicPaths[id];
+
+		for (tinyxml2::XMLElement* moveElement = typeElement->FirstChildElement(); moveElement; moveElement = moveElement->NextSiblingElement())
+		{
+			path.Moves.push_back(MagicPathMove{});
+
+			MagicPathMove& move = path.Moves.back();
+
+			bool align = readAttribute<int>(moveElement, "align", 0) == 1;
+
+			if (align)
+				++path.Aligned;
+
+			move.Velocity = readAttribute<float>(moveElement, "vel", 0);
+		}
+	}
+}
+
 void ParseBeginCondition(tinyxml2::XMLElement* node, BeginCondition& condition)
 {
 	for (tinyxml2::XMLElement* conditionElement = node->FirstChildElement(); conditionElement; conditionElement = conditionElement->NextSiblingElement())
 	{
 		const char* name = conditionElement->Name();
+
+		if (strcmp(name, "requireSkillCodes") == 0)
+		{
+			int skillId = readAttribute<int>(conditionElement, "code", 0);
+
+			condition.RequireSkillCodes.push_back(skillId);
+
+			continue;
+		}
 
 		if (strcmp(name, "owner") != 0 && strcmp(name, "target") != 0 && strcmp(name, "caster") != 0)
 			continue;
@@ -25,6 +65,13 @@ void ParseBeginCondition(tinyxml2::XMLElement* node, BeginCondition& condition)
 			target = SkillTarget::Caster;
 
 		int hasBuffID = readAttribute<int>(conditionElement, "hasBuffID", 0);
+		EventCondition eventCondition = (EventCondition)readAttribute<int>(conditionElement, "eventCondition", 0);
+
+		if (eventCondition != EventCondition::None)
+		{
+			condition.EventTarget = target;
+			condition.EventCondition = eventCondition;
+		}
 
 		if (hasBuffID != 0)
 		{
@@ -78,6 +125,11 @@ void ParseBeginCondition(tinyxml2::XMLElement* node, BeginCondition& condition)
 
 void ParseConditionSkill(tinyxml2::XMLElement* node, ConditionSkill& conditionSkill)
 {
+	conditionSkill.IsSplash = readAttribute<bool>(node, "splash", 0);
+	conditionSkill.OnlySensingActive = readAttribute<bool>(node, "onlySensingActive", 0);
+	conditionSkill.NonTargetActive = readAttribute<bool>(node, "nonTargetActive", 0);
+	conditionSkill.SkillTarget = (SkillTarget)readAttribute<int>(node, "skillTarget", 0);
+	conditionSkill.SkillOwner = (SkillTarget)readAttribute<int>(node, "skillOwner", 0);
 	conditionSkill.Reference.Type = (ReferenceType)readAttribute<int>(node, "splash", 0);
 	conditionSkill.Reference.Id = readAttribute<int>(node, "skillID", 0);
 	conditionSkill.Reference.Level = readAttribute<int>(node, "level", 0);
@@ -91,6 +143,11 @@ void ParseConditionSkill(tinyxml2::XMLElement* node, ConditionSkill& conditionSk
 		for (int i = 0; i < randomCasts.size(); ++i)
 			conditionSkill.RandomCasts.push_back(ReferenceData{ ReferenceType::Effect, randomCasts[i], 0 });
 	}
+
+	int removeDelay = readAttribute<int>(node, "removeDelay", 0);
+	int interval = readAttribute<int>(node, "interval", 0);
+	int fireCount = readAttribute<int>(node, "fireCount", 0);
+	bool immediateActive = readAttribute<bool>(node, "immediateActive", 0);
 
 	ParseBeginCondition(node->FirstChildElement(), conditionSkill.Condition);
 }
@@ -126,6 +183,24 @@ void ParseAdditionalEffect(const fs::path& filePath)
 
 		if (!isNodeEnabled(levelElement, &levelData.Feature, &levelData.Locale))
 			continue;
+
+		levelData = AdditionalEffectLevelData(levelData.Feature, levelData.Locale);
+
+		levelData.Type = readAttribute<int>(basicPropertyElement, "type", 0);
+		levelData.SubType = readAttribute<int>(basicPropertyElement, "subType", 0);
+		levelData.KeepCondition = readAttribute<int>(basicPropertyElement, "keepCondition", 0);
+		levelData.ResetCondition = readAttribute<int>(basicPropertyElement, "resetCondition", 0);
+		levelData.MaxStacks = readAttribute<int>(basicPropertyElement, "maxBuffCount", 0);
+		levelData.Group = readAttribute<int>(basicPropertyElement, "group", 0);
+
+		if (levelData.ResetCondition == 1 && levelData.MaxStacks > 1)
+		{
+			levelData.MaxStacks += 0;
+		}
+		if (levelData.ResetCondition == 0 && levelData.MaxStacks > 1)
+		{
+			levelData.MaxStacks += 0;
+		}
 
 		for (tinyxml2::XMLElement* propertyElement = levelElement->FirstChildElement(); propertyElement; propertyElement = propertyElement->NextSiblingElement())
 		{
@@ -223,6 +298,16 @@ void ParseAdditionalEffect(const fs::path& filePath)
 				continue;
 			}
 		}
+
+		for (const auto& trigger : levelData.Triggers)
+		{
+			if (trigger.Reference.Id == effectId && trigger.Reference.Level != level && trigger.Reference.Type == ReferenceType::Effect)
+				effect.ScalingLevels = false;
+
+			for (const auto& cast : trigger.RandomCasts)
+				if (cast.Id == effectId && cast.Level != level && trigger.Reference.Type == ReferenceType::Effect)
+					effect.ScalingLevels = false;
+		}
 	}
 }
 
@@ -253,6 +338,15 @@ void ParseSkill(const fs::path& filePath)
 			if (!isNodeEnabled(childElement, &skill.Feature, &skill.Locale))
 				continue;
 
+			tinyxml2::XMLElement* kindsElement = childElement->FirstChildElement("kinds");
+
+			if (kindsElement == nullptr)
+				continue;
+
+			skill.Type = readAttribute<int>(kindsElement, "type", 0);
+			skill.SubType = readAttribute<int>(kindsElement, "subType", 0);
+			skill.ImmediateActive = readAttribute<bool>(kindsElement, "immediateActive", false);
+
 			continue;
 		}
 
@@ -261,7 +355,21 @@ void ParseSkill(const fs::path& filePath)
 
 		int level = readAttribute<int>(childElement, "value", 0);
 
+		SupportSettings levelFeature;
+		SupportSettings levelLocale;
+
+		if (!isNodeEnabled(childElement, &levelFeature, &levelLocale))
+			continue;
+
 		SkillLevelData& levelData = skill.Levels[level];
+
+		if (!isNodeEnabled(childElement, &levelData.Feature, &levelData.Locale))
+			continue;
+
+		levelData = SkillLevelData(levelData.Feature, levelData.Locale);
+
+		int splashLife = -1;
+		int splashCooldown = -1;
 
 		for (tinyxml2::XMLElement* propertyElement = childElement->FirstChildElement(); propertyElement; propertyElement = propertyElement->NextSiblingElement())
 		{
@@ -276,10 +384,6 @@ void ParseSkill(const fs::path& filePath)
 
 			if (strcmp(propertyName, "changeSkill") == 0)
 			{
-				levelData.ChangeSkillReferences.push_back(ChangeSkillReference{});
-
-				ChangeSkillReference& changeSkill = levelData.ChangeSkillReferences.back();
-
 				std::vector<int> effectID;
 				std::vector<int> effectLevel;
 				std::vector<int> effectStacks;
@@ -288,8 +392,10 @@ void ParseSkill(const fs::path& filePath)
 				readAttribute(propertyElement, "changeSkillCheckEffectLevel", effectLevel);
 				readAttribute(propertyElement, "changeSkillCheckEffectOverlapCount", effectStacks);
 
+				levelData.ChangeSkillReferences.resize(effectID.size());
+
 				for (int i = 0; i < effectID.size(); ++i)
-					changeSkill.Effect = EffectReferenceData{ ReferenceType::Effect, effectID[i], effectLevel[i], effectStacks[i], 0 };
+					levelData.ChangeSkillReferences[i].Effect = EffectReferenceData{ReferenceType::Effect, effectID[i], effectLevel[i], effectStacks[i], 0};
 
 				effectID.clear();
 				effectLevel.clear();
@@ -297,13 +403,14 @@ void ParseSkill(const fs::path& filePath)
 				readAttribute(propertyElement, "changeSkillID", effectID);
 				readAttribute(propertyElement, "changeSkillLevel", effectLevel);
 
-				for (int i = 0; i < effectID.size(); ++i)
-					changeSkill.Skill = ReferenceData{ ReferenceType::Skill, effectID[i], effectLevel[i] };
+				for (int i = 0; i < levelData.ChangeSkillReferences.size(); ++i)
+					levelData.ChangeSkillReferences[i].Skill = ReferenceData{ReferenceType::Skill, effectID[i], effectLevel[i]};
 
 				int originSkillID = readAttribute<int>(propertyElement, "originSkillID", 0);
 				int originSkillLevel = readAttribute<int>(propertyElement, "originSkillLevel", 0);
 
-				changeSkill.OriginSkill = ReferenceData{ ReferenceType::Skill, originSkillID, originSkillLevel };
+				for (int i = 0; i < levelData.ChangeSkillReferences.size(); ++i)
+					levelData.ChangeSkillReferences[i].OriginSkill = ReferenceData{ ReferenceType::Skill, originSkillID, originSkillLevel };
 
 				continue;
 			}
@@ -332,20 +439,63 @@ void ParseSkill(const fs::path& filePath)
 
 				SkillMotion& motion = levelData.Motions.back();
 
-				for (tinyxml2::XMLElement* attackElement = propertyElement->FirstChildElement(); attackElement; attackElement = attackElement->NextSiblingElement())
+				for (tinyxml2::XMLElement* motionNodeElement = propertyElement->FirstChildElement(); motionNodeElement; motionNodeElement = motionNodeElement->NextSiblingElement())
 				{
-					const char* attackName = attackElement->Name();
+					const char* motionNodeName = motionNodeElement->Name();
 
-					if (strcmp(attackName, "attack") != 0)
+					if (strcmp(motionNodeName, "motionProperty") == 0)
+					{
+						int splashLifeTick = readAttribute<int>(motionNodeElement, "splashLifeTick", 0);
+						int splashInvokeCoolTick = readAttribute<int>(motionNodeElement, "splashInvokeCoolTick", 0);
+
+						if (splashLifeTick != 0)
+						{
+							if (splashLife != -1 && splashLife != splashLifeTick)
+								splashLifeTick += 0;
+
+							splashLife = splashLifeTick;
+
+							if (splashCooldown != -1 && splashCooldown != splashInvokeCoolTick)
+								splashInvokeCoolTick += 0;
+
+							splashCooldown = splashInvokeCoolTick;
+						}
+
+						continue;
+					}
+
+					if (strcmp(motionNodeName, "attack") != 0)
 						continue;
 
 					motion.Attacks.push_back(SkillAttack{});
 
 					SkillAttack& attack = motion.Attacks.back();
 
-					for (tinyxml2::XMLElement* childElement = attackElement->FirstChildElement(); childElement; childElement = childElement->NextSiblingElement())
+					attack.MagicPathId = readAttribute<int>(motionNodeElement, "magicPathID", 0);
+					attack.CubeMagicPathId = readAttribute<int>(motionNodeElement, "cubeMagicPathID", 0);
+
+					++levelData.TotalAttacks;
+
+					bool hasSplash = false;
+
+					for (tinyxml2::XMLElement* childElement = motionNodeElement->FirstChildElement(); childElement; childElement = childElement->NextSiblingElement())
 					{
 						const char* childName = childElement->Name();
+
+						if (strcmp(childName, "rangeProperty") == 0)
+						{
+							attack.CastTarget = (ApplyTarget)readAttribute<int>(childElement, "castTarget", 0);
+							attack.ApplyTarget = (ApplyTarget)readAttribute<int>(childElement, "applyTarget", 0);
+
+							continue;
+						}
+
+						if (strcmp(childName, "damageProperty") == 0)
+						{
+							attack.AttackMaterial = readAttribute<unsigned char>(childElement, "attackMaterial", 0);
+
+							continue;
+						}
 
 						if (strcmp(childName, "conditionSkill") != 0)
 							continue;
@@ -353,12 +503,82 @@ void ParseSkill(const fs::path& filePath)
 						attack.Triggers.push_back(ConditionSkill());
 
 						ParseConditionSkill(childElement, attack.Triggers.back());
+
+						hasSplash |= attack.Triggers.back().IsSplash;
 					}
+
+					if (attack.CubeMagicPathId != 0 && !hasSplash)
+						levelData.TotalAttacks += 0;
+
+					if (attack.MagicPathId != 0 && !hasSplash)
+						levelData.TotalAttacks += 0;
+
+				}
+
+				for (int i = 0; i < motion.Attacks.size(); ++i)
+				{
+					SkillAttack& attack = motion.Attacks[i];
+
+					if (attack.MagicPathId != 0)
+						motion.TotalPaths++;
+
+					if (attack.CubeMagicPathId != 0)
+						motion.TotalCubePaths++;
+				}
+
+				if (motion.TotalPaths > 1)
+				{
+					motion.TotalPaths += 0;
 				}
 
 				continue;
 			}
 		}
+
+		for (const auto& motion : levelData.Motions)
+		{
+			for (const auto& attack : motion.Attacks)
+			{
+				for (const auto& trigger : attack.Triggers)
+				{
+					if (trigger.Reference.Id == skillId && trigger.Reference.Level != level && trigger.Reference.Type == ReferenceType::Skill)
+						skill.ScalingLevels = false;
+				}
+			}
+		}
+
+		for (int i = 0; i < levelData.Motions.size(); ++i)
+		{
+			SkillMotion& motion = levelData.Motions[i];
+
+			levelData.TotalPaths += motion.TotalPaths;
+			levelData.TotalCubePaths += motion.TotalCubePaths;
+
+			if (motion.TotalPaths > 0)
+				levelData.TotalMotionsWithPaths++;
+
+			if (motion.TotalCubePaths > 0)
+				levelData.TotalMotionsWithCubePaths++;
+		}
+
+		if (levelData.Motions.size() > 1)
+		{
+			level += 0;
+		}
+
+		if (levelData.TotalPaths > 1)
+		{
+			levelData.TotalPaths += 0;
+		}
+
+		if (levelData.TotalMotionsWithPaths > 1)
+		{
+			levelData.TotalMotionsWithPaths += 0;
+		}
+
+		for (int i = 0; i < levelData.Motions.size(); ++i)
+			if (levelData.Motions[i].TotalPaths > 1)
+				level += 0;
 	}
 }
 
@@ -550,8 +770,8 @@ void ParseJobs(const fs::path& filePath)
 		if (!isNodeEnabled(jobElement, &job.Feature, &job.Locale))
 			continue;
 
+		job = JobData(job.Feature, job.Locale);
 		job.Job = jobCode;
-		job.Skills.clear();
 
 		tinyxml2::XMLElement* skillsElement = jobElement->FirstChildElement("skills");
 
@@ -695,6 +915,8 @@ void ParseSetBonuses(const fs::path& filePath)
 		if (!isNodeEnabled(setElement, &setData.Feature, &setData.Locale))
 			continue;
 
+		setData = SetBonusData(setData.Feature, setData.Locale);
+
 		setData.OptionId = optionId;
 		setData.OptionData = &optionIndex->second;
 
@@ -733,6 +955,50 @@ void ParseSetBonusStrings(const fs::path& filePath)
 	}
 }
 
+ItemType GetItemType(int idDigits)
+{
+	switch (idDigits)
+	{
+		case 112: return ItemType::Earring;
+		case 113: return ItemType::Hat;
+		case 114: return ItemType::Clothes;
+		case 115: return ItemType::Pants;
+		case 116: return ItemType::Gloves;
+		case 117: return ItemType::Shoes;
+		case 118: return ItemType::Cape;
+		case 119: return ItemType::Necklace;
+		case 120: return ItemType::Ring;
+		case 121: return ItemType::Belt;
+		case 122: return ItemType::Overall;
+		case 130: return ItemType::Bludgeon;
+		case 131: return ItemType::Dagger;
+		case 132: return ItemType::Longsword;
+		case 133: return ItemType::Scepter;
+		case 134: return ItemType::ThrowingStar;
+		case 140: return ItemType::Spellbook;
+		case 141: return ItemType::Shield;
+		case 150: return ItemType::Greatsword;
+		case 151: return ItemType::Bow;
+		case 152: return ItemType::Staff;
+		case 153: return ItemType::Cannon;
+		case 154: return ItemType::Blade;
+		case 155: return ItemType::Knuckle;
+		case 156: return ItemType::Orb;
+		case 209: return ItemType::Medal;
+		case 410:
+		case 420:
+		case 430: return ItemType::Lapenshard;
+		case 501:
+		case 502:
+		case 503:
+		case 504:
+		case 505: return ItemType::Furnishing;
+		case 600: return ItemType::Pet;
+		case 900: return ItemType::Currency;
+		default: return ItemType::None;
+	}
+}
+
 void ParseItems(const fs::path& filePath)
 {
 	int itemId = atoi(filePath.stem().string().c_str());
@@ -750,25 +1016,63 @@ void ParseItems(const fs::path& filePath)
 		if (!isNodeEnabled(environmentElement, &item.Feature, &item.Locale))
 			continue;
 
+		item = ItemData(item.Feature, item.Locale);
+
+		item.Id = itemId;
+		item.Type = GetItemType(itemId / 100000);
+
+		tinyxml2::XMLElement* limit = environmentElement->FirstChildElement("limit");
 		tinyxml2::XMLElement* additionalEffects = environmentElement->FirstChildElement("AdditionalEffect");
+		tinyxml2::XMLElement* skills = environmentElement->FirstChildElement("skill");
 
-		if (additionalEffects == nullptr)
-			continue;
+		if (limit != nullptr)
+			item.JobLimit = (JobCode)readAttribute<int>(limit, "jobLimit", 0);
 
-		std::vector<int> effectIds;
-		std::vector<int> effectLevels;
-
-		readAttribute(additionalEffects, "id", effectIds);
-		readAttribute(additionalEffects, "level", effectLevels);
-
-		for (int i = 0; i < effectIds.size(); ++i)
+		if (item.Type == ItemType::Lapenshard)
 		{
-			int effectId = effectIds[i];
+			if (item.JobLimit != JobCode::None)
+				jobs[item.JobLimit].Lapenshards.push_back(&item);
+			else
+				for (auto& jobPair : jobs)
+					jobPair.second.Lapenshards.push_back(&item);
+		}
 
-			if (effectId == 0)
-				continue;
+		std::vector<int> referenceIds;
+		std::vector<int> referenceLevels;
 
-			item.AdditionalEffects.push_back(ReferenceData{ ReferenceType::Effect, effectId, effectLevels[i] });
+		if (additionalEffects != nullptr)
+		{
+			readAttribute(additionalEffects, "id", referenceIds);
+			readAttribute(additionalEffects, "level", referenceLevels);
+
+			for (int i = 0; i < referenceIds.size(); ++i)
+			{
+				int effectId = referenceIds[i];
+
+				if (effectId == 0)
+					continue;
+
+				item.AdditionalEffects.push_back(ReferenceData{ ReferenceType::Effect, effectId, referenceLevels[i] });
+			}
+		}
+
+		referenceIds.clear();
+		referenceLevels.clear();
+
+		if (skills != nullptr)
+		{
+			readAttribute(skills, "skillID", referenceIds);
+			readAttribute(skills, "skillLevel", referenceLevels);
+
+			for (int i = 0; i < referenceIds.size(); ++i)
+			{
+				int effectId = referenceIds[i];
+
+				if (effectId == 0)
+					continue;
+
+				item.Skills.push_back(ReferenceData{ ReferenceType::Skill, effectId, referenceLevels[i] });
+			}
 		}
 	}
 }
@@ -814,6 +1118,89 @@ void ParseItemStrings(const fs::path& filePath)
 	}
 }
 
+void ParseItemDescriptionStrings(const fs::path& filePath)
+{
+	tinyxml2::XMLDocument document;
+
+	document.LoadFile(filePath.string().c_str());
+
+	tinyxml2::XMLElement* rootElement = document.RootElement();
+
+	for (tinyxml2::XMLElement* keyElement = rootElement->FirstChildElement(); keyElement; keyElement = keyElement->NextSiblingElement())
+	{
+		int itemId = readAttribute<int>(keyElement, "id", 0);
+
+		if (itemId == 0)
+			continue;
+
+		auto itemIndex = items.find(itemId);
+
+		if (itemIndex == items.end())
+			continue;
+
+		ItemData& item = itemIndex->second;
+
+		if (!isNodeEnabled(keyElement, &item.Feature, &item.Locale))
+			continue;
+
+		const tinyxml2::XMLAttribute* tooltipAttribute = keyElement->FindAttribute("tooltipDescription");
+
+		if (tooltipAttribute == nullptr)
+			continue;
+
+		item.Description = tooltipAttribute->Value();
+
+		const tinyxml2::XMLAttribute* guideAttribute = keyElement->FindAttribute("guideDescription");
+
+		if (guideAttribute == nullptr)
+			continue;
+
+		item.Description += guideAttribute->Value();
+	}
+}
+
+std::string Sanitize(const std::string& text, bool isTooltip)
+{
+	int extraCharacters = 0;
+
+	for (int i = 0; i < text.size(); ++i)
+	{
+		if (text[i] == '"' || text[i] == '\\')
+			++extraCharacters;
+		else if (text[i] == '\n' || text[i] == '\r')
+			extraCharacters += isTooltip ? 5 : 1;
+	}
+
+	if (extraCharacters == 0)
+		return text;
+
+	std::string cleaned;
+
+	cleaned.reserve(text.size() + extraCharacters);
+
+	for (int i = 0; i < text.size(); ++i)
+	{
+		if (text[i] == '"' || text[i] == '\\')
+			cleaned.push_back('\\');
+
+		if (text[i] != '\n' && text[i] != '\r')
+			cleaned.push_back(text[i]);
+		else if (!isTooltip)
+			cleaned.push_back(text[i] == '\n' ? 'n' : 'r');
+		else
+		{
+			cleaned.push_back('&');
+			cleaned.push_back('#');
+			cleaned.push_back('0');
+			cleaned.push_back('1');
+			cleaned.push_back('3');
+			cleaned.push_back(';');
+		}
+	}
+
+	return cleaned;
+}
+
 std::string Desanitize(const std::string& text)
 {
 	int apostrophies = 0;
@@ -842,7 +1229,7 @@ std::string Desanitize(const std::string& text)
 
 	std::string cleaned;
 
-	cleaned.reserve(text.size() - 5 * apostrophies);
+	cleaned.resize(text.size() - 5 * apostrophies);
 
 	int textIndex = 0;
 

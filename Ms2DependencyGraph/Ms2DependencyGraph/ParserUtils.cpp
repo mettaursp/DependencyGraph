@@ -93,12 +93,14 @@ unsigned long long readValue<unsigned long long>(const char* value)
 	return atoll(value);
 }
 
-SupportLevel featureIsActive(const char* feature)
+int featureIsActive(const char* feature)
 {
 	if (strcmp(feature, "") == 0)
-		return SupportLevel::Default;
+		return 1;
 
-	return features.find(feature) != features.end() ? SupportLevel::Override : SupportLevel::None;
+	const auto& support = features.find(feature);
+
+	return support != features.end() ? support->second : -1;
 }
 
 SupportLevel matchesLocale(const char* nodeLocale)
@@ -113,7 +115,7 @@ SupportSettings featureIsActive(tinyxml2::XMLElement* node, SupportSettings& set
 {
 	const tinyxml2::XMLAttribute* attribute = node->FindAttribute("feature");
 
-	SupportLevel support = SupportLevel::Default;
+	int support = -1;
 	const char* feature = "";
 
 	if (attribute != nullptr)
@@ -123,7 +125,7 @@ SupportSettings featureIsActive(tinyxml2::XMLElement* node, SupportSettings& set
 	}
 
 	if (settings.OverriddenBy(support))
-		return SupportSettings{ feature, support };
+		return SupportSettings{ feature, SupportLevel::Default, support };
 
 	return SupportSettings{ "", SupportLevel::None };
 }
@@ -158,7 +160,7 @@ bool isNodeEnabled(tinyxml2::XMLElement* node, SupportSettings* feature, Support
 	if (locale != nullptr)
 		localeFound = matchesLocale(node, *locale);
 
-	if (featureFound.Level == SupportLevel::None || localeFound.Level == SupportLevel::None)
+	if (featureFound.Version == -1 || featureFound.Version == 99 || featureFound.Version < feature->Version || localeFound.Level == SupportLevel::None)
 		return false;
 
 	if (feature != nullptr)

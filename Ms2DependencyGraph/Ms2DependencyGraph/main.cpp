@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_set>
+#include <type_traits>
 
 #include "ParserUtils.h"
 #include "XmlData.h"
@@ -37,8 +38,7 @@ void graphClassKit(const fs::path& outputRoot, JobCode jobCode)
 
 	outFile << "digraph " << jobName << "_Kit {\n";
 
-	for (int i = 0; i < job.Skills.size(); ++i)
-		graphData.PrintRoot(job.Skills[i]);
+	graphData.PrintRoot(job);
 
 	graphData.PrintLinked();
 
@@ -55,7 +55,7 @@ void graphSetBonus(const fs::path& outputRoot, int setId, const SetBonusData& se
 	std::string setVarName = setName;
 
 	for (int i = 0; i < setVarName.size(); ++i)
-		if (setVarName[i] == ' ' || setVarName[i] == '(' || setVarName[i] == ')')
+		if (setVarName[i] == ' ' || setVarName[i] == '(' || setVarName[i] == ')' || setVarName[i] == '\'')
 			setVarName[i] = '_';
 
 	char idString[16] = { 0 };
@@ -81,8 +81,79 @@ void graphSetBonus(const fs::path& outputRoot, int setId, const SetBonusData& se
 	outFile.close();
 }
 
+//template <class ParentClass>
+//class DerivedFrom : public ParentClass
+//{
+//public:
+//	typedef ParentClass Parent;
+//};
+//
+//template <typename T>
+//constexpr bool IsUpdateable()
+//{
+//	return &T::Update != &T::Parent::Update;
+//}
+//
+//template <>
+//constexpr bool IsUpdateable<class Object>()
+//{
+//	return true;
+//}
+//
+//template <typename T>
+//struct ParentOf
+//{
+//	typedef T::Parent Type;
+//};
+//
+//class Object
+//{
+//public:
+//	template <class Self>
+//	void UpdateCore(float delta)
+//	{
+//		InvokeUpdate<Self>(delta);
+//	}
+//
+//	template <>
+//	void UpdateCore<Object>(float delta)
+//	{
+//		InvokeUpdate<Object>(delta);
+//		Object::Update(delta);
+//	}
+//
+//	template <class Self> requires(IsUpdateable<Self>())
+//	void InvokeUpdate(float delta)
+//	{
+//		typedef void (Self::* Callback)(float);
+//
+//		Callback callback = &Self::Update;
+//
+//	    (this->*callback)(delta);
+//	}
+//
+//	template <class Self> requires(!IsUpdateable<Self>())
+//	void InvokeUpdate(float delta) {}
+//
+//	void Update(float delta)
+//	{
+//		// do thing
+//	}
+//};
+//class Transform : public DerivedFrom<Object>
+//{
+//public:
+//	void Update(float delta) {}
+//};
+
 int main(int argc, char** argv)
 {
+	//Object a;
+	//Transform b;
+	//
+	//b.UpdateCore<Transform>(0);
+
+
 	fs::path xmlRootPath = "B:/Documents/MapleServer2/GameDataParser/Resources/Xml/";
 	fs::path outputRootPath = "B:/Documents/Ms2DependencyGraph/output/";
 
@@ -100,6 +171,9 @@ int main(int argc, char** argv)
 
 	fs::path stringRootPath = xmlRootPath;
 	stringRootPath += "string/en/";
+
+	fs::path magicPath = xmlRootPath;
+	magicPath += "table/magicpath.xml";
 
 	fs::path jobPath = xmlRootPath;
 	jobPath += "table/job.xml";
@@ -128,13 +202,18 @@ int main(int argc, char** argv)
 	fs::path itemStringPath = xmlRootPath;
 	itemStringPath += "string/en/itemname.xml";
 
+	fs::path itemDescPath = xmlRootPath;
+	itemDescPath += "string/en/koritemdescription.xml";
+
+	ParseMagicPaths(magicPath);
 	forEachFile(effectRootPath, true, &ParseAdditionalEffect);
 	forEachFile(skillRootPath, true, &ParseSkill);
 	forEachFile(stringRootPath, true, &ParseStrings);
-	forEachFile(itemRootPath, true, &ParseItems);
 	ParseJobs(jobPath);
+	forEachFile(itemRootPath, true, &ParseItems);
 	ParseJobStrings(jobNamePath);
 	ParseItemStrings(itemStringPath);
+	ParseItemDescriptionStrings(itemDescPath);
 	ParseSetBonusOptions(setItemOptionPath);
 	ParseSetBonuses(setItemInfoPath);
 	ParseSetBonusStrings(setItemNamePath);

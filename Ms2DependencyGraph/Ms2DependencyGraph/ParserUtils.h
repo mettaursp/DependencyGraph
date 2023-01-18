@@ -39,17 +39,23 @@ struct SupportSettings
 {
 	std::string Name;
 	SupportLevel Level = SupportLevel::Default;
+	int Version = 0;
 
 	bool OverriddenBy(SupportLevel support)
 	{
 		return Level != SupportLevel::Override || support == SupportLevel::Override;
+	}
+
+	bool OverriddenBy(int version)
+	{
+		return version >= 0 && version > Version && version != 99;
 	}
 };
 
 extern std::unordered_map<std::string, int> features;
 extern std::string locale;
 
-SupportLevel featureIsActive(const char* feature);
+int featureIsActive(const char* feature);
 
 SupportLevel matchesLocale(const char* nodeLocale);
 
